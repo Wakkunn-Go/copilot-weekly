@@ -1,0 +1,76 @@
+name: Copilot Weekly - Gemini API Diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Diagnose Gemini generation without changing website
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, socket, time, urllib.error, urllib.request
+          key = os.environ.get("GEMINI_API_KEY", "").strip()
+          if not key:
+              raise SystemExit("ERROR: GEMINI_API_KEY secret missing")
+          base = "https://generativelanguage.googleapis.com/v1beta/"
+          def call(url, data=None, timeout=20):
+              headers = {"x-goog-api-key": key, "Content-Type": "application/json"}
+              request = urllib.request.Request(url, headers=headers, method="POST" if data is not None else "GET",
+                                               data=json.dumps(data).encode() if data is not None else None)
+              start = time.monotonic()
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      result = json.load(response)
+                  return ("OK", result, round(time.monotonic()-start, 1))
+              except urllib.error.HTTPError as error:
+                  try:
+                      detail = json.loads(error.read(4096)).get("error", {})
+                      status = detail.get("status", "unknown")
+                  except Exception:
+                      status = "unknown"
+                  return (f"HTTP_{error.code}_{status}", {}, round(time.monotonic()-start, 1))
+              except (TimeoutError, socket.timeout):
+                  return ("TIMEOUT", {}, round(time.monotonic()-start, 1))
+              except Exception as error:
+                  return (type(error).__name__, {}, round(time.monotonic()-start, 1))
+          status, response, elapsed = call(base+"models", timeout=20)
+          print("Model discovery:", status, "seconds:", elapsed)
+          if status != "OK":
+              raise SystemExit("Cannot list models; website unchanged")
+          available = {m["name"].split("/")[-1] for m in response.get("models", [])
+                       if "generateContent" in m.get("supportedGenerationMethods", [])}
+          models = [m for m in ("gemini-3.8-flash-lite", "gemini-3-flash-preview", "gemini-3.8-flash")
+                    if m in available]
+          print("Candidate model names:", models)
+          if not models:
+              raise SystemExit("No candidate models accessible; website unchanged")
+          body = {"contents": [{"parts": [{"text": "Reply with exactly: OK"}]}],
+                  "generationConfig": {"maxOutputTokens": 128, "temperature": 0}}
+          succeeded = False
+          for model in models:
+              status, response, elapsed = call(base+"models/"+model+":generateContent", body, timeout=25)
+              candidates = response.get("candidates", [])
+              parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
+              has_text = any(p.get("text", "").strip() for p in parts)
+              finish = candidates[0].get("finishReason", "none") if candidates else "none"
+              print("Generation:", model, "status:", status, "seconds:", elapsed,
+                    "has_text:", has_text, "finish:", finish)
+              if status == "OK" and has_text:
+                  succeeded = True
+                  break
+          if not succeeded:
+              raise SystemExit("DIAGNOSIS: no text-generation response; website unchanged")
+          print("DIAGNOSIS_OK: text generation works; website unchanged")
+          PY
+      - name: Ensure website files were not changed
+        if: always()
+        run: git diff --exit-code -- index.html
