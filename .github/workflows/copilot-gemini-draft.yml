@@ -16,12 +16,16 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python3 scripts/generate_gemini_draft.py
+      - name: Validate generated draft and produce editorial review report
+        run: python3 scripts/validate_gemini_draft.py
       - name: Ensure published site remains unchanged
         run: git diff --exit-code -- index.html
       - name: Save non-public editorial draft
         uses: actions/upload-artifact@v4
         with:
           name: copilot-weekly-gemini-draft
-          path: copilot-weekly-draft.json
+          path: |
+            copilot-weekly-draft.json
+            copilot-weekly-quality-report.json
           retention-days: 7
           if-no-files-found: error
