@@ -13,7 +13,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 SOURCE = "https://learn.microsoft.com/en-us/microsoft-365/copilot/release-notes"
-MODEL_PREFERENCE = ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash")
+MODEL_PREFERENCE = ("gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3-flash-preview")
 
 class SourceText(HTMLParser):
     def __init__(self):
