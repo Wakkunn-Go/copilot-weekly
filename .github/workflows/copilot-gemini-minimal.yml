@@ -1,0 +1,58 @@
+name: Copilot Weekly - Gemini Minimal Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  minimal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test short Gemini response without publishing
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error, socket
+          key = os.environ.get("GEMINI_API_KEY", "").strip()
+          if not key:
+              raise SystemExit("Secret missing")
+          model = "gemini-3.8-flash"
+          url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+          body = {
+              "contents": [{"parts": [{"text": "日本語で「接続テスト成功」とだけ答えてください。"}]}],
+              "generationConfig": {"maxOutputTokens": 80, "temperature": 0}
+          }
+          req = urllib.request.Request(url, data=json.dumps(body).encode(),
+              headers={"Content-Type": "application/json", "x-goog-api-key": key},
+              method="POST")
+          try:
+              with urllib.request.urlopen(req, timeout=35) as response:
+                  data = json.load(response)
+              candidates = data.get("candidates", [])
+              print("HTTP 200; candidate count:", len(candidates))
+              print("Finish reason:", candidates[0].get("finishReason", "unknown") if candidates else "none")
+              text = "".join(p.get("text", "") for p in candidates[0].get("content", {}).get("parts", [])) if candidates else ""
+              print("Text response received:", bool(text.strip()))
+              if not text.strip():
+                  raise SystemExit("No text response returned")
+              print("MINIMAL_GEMINI_TEST_OK")
+          except urllib.error.HTTPError as exc:
+              try:
+                  err = json.loads(exc.read(4096))
+                  info = err.get("error", {})
+                  print("API HTTP error:", exc.code, info.get("status", "unknown"))
+              except Exception:
+                  print("API HTTP error:", exc.code)
+              raise SystemExit(1)
+          except (TimeoutError, socket.timeout):
+              print("Minimal Gemini request timed out at 35 seconds")
+              raise SystemExit(1)
+          PY
+      - name: Ensure published site unchanged
+        run: git diff --exit-code -- index.html
