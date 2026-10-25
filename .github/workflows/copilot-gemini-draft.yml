@@ -1,0 +1,27 @@
+name: Copilot Weekly - Gemini Draft Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Japanese draft using Gemini free-tier API
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python3 scripts/generate_gemini_draft.py
+      - name: Ensure published site remains unchanged
+        run: git diff --exit-code -- index.html
+      - name: Save non-public editorial draft
+        uses: actions/upload-artifact@v4
+        with:
+          name: copilot-weekly-gemini-draft
+          path: copilot-weekly-draft.json
+          retention-days: 7
+          if-no-files-found: error
