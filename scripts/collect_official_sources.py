@@ -25,7 +25,7 @@ class Headings(HTMLParser):
         if self.depth:
             self.depth -= 1
             if self.depth == 0:
-                heading = re.sub(r"\\s+", " ", "".join(self.parts)).strip()
+                heading = re.sub(r"\s+", " ", "".join(self.parts)).strip()
                 if heading:
                     self.headings.append(heading)
     def handle_data(self, data):
@@ -49,7 +49,7 @@ def main():
         "editorial_status": "SOURCE_DISCOVERY_ONLY_NOT_VERIFIED_FOR_PUBLICATION",
         "notes": "Headings are discovery leads, not verified news. Publication dates, license, rollout, claims and source links require separate verification.",
     }
-    Path("source-audit.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    Path("source-audit.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Collected {len(result['headings'])} official page headings. No website files changed.")
 
 if __name__ == "__main__":
