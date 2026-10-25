@@ -1,0 +1,48 @@
+name: Copilot Weekly - Cloud Preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out site
+        uses: actions/checkout@v4
+      - name: Validate existing site without changing files
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import urllib.request
+          page = Path("index.html").read_text(encoding="utf-8")
+          checks = {
+              "HTML document": "<!doctype html>" in page.lower(),
+              "article cards": 'class="card"' in page,
+              "category filtering": "data-filter" in page,
+              "copy button": 'id="copy"' in page,
+              "copy handler": "clipboard.writeText" in page,
+              "practice section": 'id="practice"' in page,
+          }
+          for name, ok in checks.items():
+              print(f"{name}: {'PASS' if ok else 'FAIL'}")
+          if not all(checks.values()):
+              raise SystemExit("Site checks failed; nothing was changed.")
+          url = "https://learn.microsoft.com/en-us/microsoft-365/copilot/release-notes"
+          req = urllib.request.Request(url, headers={"User-Agent": "CopilotWeeklyPreflight/1.0"})
+          with urllib.request.urlopen(req, timeout=25) as response:
+              body = response.read(200000).decode("utf-8", errors="replace")
+              print(f"Official Microsoft source HTTP: {response.status}")
+              if response.status != 200 or "Copilot" not in body:
+                  raise SystemExit("Official source check failed; nothing was changed.")
+          print("PREFLIGHT_OK: no content files modified")
+          PY
+      - name: Confirm no tracked file changes
+        shell: bash
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
