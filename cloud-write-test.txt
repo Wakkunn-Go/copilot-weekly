@@ -1,0 +1,4 @@
+Copilot Weekly cloud write test
+Date: 2026-10-25 JST
+Purpose: Verify GitHub connector can commit to main without a local PC.
+This file does not change the website.
