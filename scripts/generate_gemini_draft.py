@@ -13,7 +13,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 SOURCE = "https://learn.microsoft.com/en-us/microsoft-365/copilot/release-notes"
-MODEL = "gemini-2.5-flash"
+MODEL_PREFERENCE = ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash")
 
 class SourceText(HTMLParser):
     def __init__(self):
@@ -43,7 +43,7 @@ class SourceText(HTMLParser):
 def request_json(url, data):
     req = urllib.request.Request(
         url, data=json.dumps(data, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": "CopilotWeeklyDraft/1.0"},
+        headers={"Content-Type": "application/json", "User-Agent": "CopilotWeeklyDraft/1.0", "x-goog-api-key": os.environ["GEMINI_API_KEY"]},
         method="POST")
     with urllib.request.urlopen(req, timeout=90) as response:
         return json.load(response)
@@ -83,12 +83,35 @@ def main():
     payload = {"systemInstruction": {"parts": [{"text": instructions}]},
                "contents": [{"parts": [{"text": "公式URL: " + SOURCE + "\n公式ページの抜粋:\n" + evidence}]}],
                "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2}}
+    # Discover available models for this key instead of assuming a model exists.
+    models_req = urllib.request.Request(
+        "https://generativelanguage.googleapis.com/v1beta/models",
+        headers={"x-goog-api-key": key, "User-Agent": "CopilotWeeklyDraft/1.0"})
+    try:
+        with urllib.request.urlopen(models_req, timeout=30) as models_response:
+            model_data = json.load(models_response)
+    except urllib.error.HTTPError as exc:
+        print(f"Gemini model discovery returned HTTP {exc.code}; no files published.")
+        raise SystemExit(1)
+    available = {
+        item["name"].split("/")[-1]
+        for item in model_data.get("models", [])
+        if "generateContent" in item.get("supportedGenerationMethods", [])
+    }
+    selected = next((name for name in MODEL_PREFERENCE if name in available), None)
+    if not selected:
+        print("No preferred Gemini model is available to this API key. "
+              "Check Google AI Studio models; no files published.")
+        print("Available text generation models:", ", ".join(sorted(available)[:25]))
+        raise SystemExit(1)
+    print("Selected Gemini model:", selected)
     try:
         response = request_json(
-            "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent?key=" + key,
-            payload)
+            "https://generativelanguage.googleapis.com/v1beta/models/" + selected + ":generateContent",
+            payload,
+        )
     except urllib.error.HTTPError as exc:
-        print(f"Gemini API returned HTTP {exc.code}; no files published.")
+        print(f"Gemini generation returned HTTP {exc.code}; no files published.")
         raise SystemExit(1)
     parts = response.get("candidates", [{}])[0].get("content", {}).get("parts", [])
     raw = "".join(p.get("text", "") for p in parts)
@@ -112,7 +135,7 @@ def main():
     output = {
         "status": "DRAFT_ONLY_NOT_FACT_CHECKED_NOT_PUBLISHED",
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "source_url": SOURCE, "model": MODEL,
+        "source_url": SOURCE, "model": selected,
         "notice": "AI-generated; source quotes are checked but all claims, dates, availability and licenses require independent review.",
         "draft": draft
     }
