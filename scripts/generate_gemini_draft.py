@@ -111,7 +111,19 @@ def main():
             payload,
         )
     except urllib.error.HTTPError as exc:
-        print(f"Gemini generation returned HTTP {exc.code}; no files published.")
+        # Never print the API key, request URL, headers, or full response.
+        try:
+            err = json.loads(exc.read(12000).decode("utf-8", "replace"))
+            detail = err.get("error", {})
+            code = detail.get("status", "UNKNOWN")
+            message = detail.get("message", "No details returned")
+            # Suppress any accidental credentials or URLs in provider text.
+            message = re.sub(r"AIza[0-9A-Za-z_-]{20,}", "[REDACTED_KEY]", message)
+            message = re.sub(r"https?://\\S+", "[REDACTED_URL]", message)
+            print(f"Gemini generation HTTP {exc.code}, status {code}: {message[:600]}")
+        except Exception:
+            print(f"Gemini generation HTTP {exc.code}, response unreadable.")
+        print("No site files were published.")
         raise SystemExit(1)
     parts = response.get("candidates", [{}])[0].get("content", {}).get("parts", [])
     raw = "".join(p.get("text", "") for p in parts)
