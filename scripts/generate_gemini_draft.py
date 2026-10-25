@@ -13,7 +13,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 SOURCE = "https://learn.microsoft.com/en-us/microsoft-365/copilot/release-notes"
-MODEL_PREFERENCE = ("gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3-flash-preview")
+MODEL_PREFERENCE = ("gemini-3.8-flash-lite", "gemini-3.8-flash", "gemini-3-flash-preview")
 
 class SourceText(HTMLParser):
     def __init__(self):
@@ -45,7 +45,7 @@ def request_json(url, data):
         url, data=json.dumps(data, ensure_ascii=False).encode("utf-8"),
         headers={"Content-Type": "application/json", "User-Agent": "CopilotWeeklyDraft/1.0", "x-goog-api-key": os.environ["GEMINI_API_KEY"]},
         method="POST")
-    with urllib.request.urlopen(req, timeout=90) as response:
+    with urllib.request.urlopen(req, timeout=150) as response:
         return json.load(response)
 
 def main():
@@ -59,10 +59,10 @@ def main():
         html = response.read(1800000).decode("utf-8", "replace")
     parser = SourceText()
     parser.feed(html)
-    blocks = parser.blocks[:120]
+    blocks = parser.blocks[:45]
     if len(blocks) < 8:
         raise RuntimeError("Source parsing yielded too few blocks; stop.")
-    evidence = json.dumps(blocks, ensure_ascii=False)[:35000]
+    evidence = json.dumps(blocks, ensure_ascii=False)[:12000]
     instructions = (
         "あなたはMicrosoft 365 Copilotの慎重な日本語編集者です。以下はMicrosoft公式リリースノートの抜粋です。"
         "抜粋に明記されている内容のみ使用し、未確認情報を補わないでください。"
@@ -82,7 +82,7 @@ def main():
     )
     payload = {"systemInstruction": {"parts": [{"text": instructions}]},
                "contents": [{"parts": [{"text": "公式URL: " + SOURCE + "\n公式ページの抜粋:\n" + evidence}]}],
-               "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2}}
+               "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2, "maxOutputTokens": 2800}}
     # Discover available models for this key instead of assuming a model exists.
     models_req = urllib.request.Request(
         "https://generativelanguage.googleapis.com/v1beta/models",
@@ -110,6 +110,9 @@ def main():
             "https://generativelanguage.googleapis.com/v1beta/models/" + selected + ":generateContent",
             payload,
         )
+    except TimeoutError:
+        print("Gemini generation timed out; no site files were published.")
+        raise SystemExit(1)
     except urllib.error.HTTPError as exc:
         # Never print the API key, request URL, headers, or full response.
         try:
